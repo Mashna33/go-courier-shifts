@@ -1,0 +1,7 @@
+# build output
+/bin/
+*.test
+*.out
+
+# local config
+.env
