@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shifts
+          POSTGRES_PASSWORD: shifts
+          POSTGRES_DB: shifts_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shifts -d shifts_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://shifts:shifts@localhost:5432/shifts_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Форматирование
+        run: test -z "$(gofmt -l .)"
+      - name: Статический анализ
+        run: go vet ./...
+      - name: Тесты (с детектором гонок и реальной PostgreSQL)
+        run: go test -race -count=1 -cover ./...
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Собрать образ и поднять сервис вместе с базой
+        run: docker compose up -d --build
+      - name: Сквозная проверка через HTTP
+        run: scripts/smoke.sh
+      - name: Логи сервиса при ошибке
+        if: failure()
+        run: docker compose logs app
+      - name: Остановить
+        if: always()
+        run: docker compose down -v
